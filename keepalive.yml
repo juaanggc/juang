@@ -1,0 +1,11 @@
+# Opcional: evita que Supabase pause el proyecto gratuito por inactividad.
+# Añade los secretos SUPABASE_URL y SUPABASE_KEY (clave anon) en Settings → Secrets → Actions.
+name: keepalive
+on:
+  schedule: [{cron: '0 9 */3 * *'}]
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl -fsS "${{ secrets.SUPABASE_URL }}/rest/v1/site?select=id" -H "apikey: ${{ secrets.SUPABASE_KEY }}" > /dev/null

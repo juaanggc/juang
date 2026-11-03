@@ -1,188 +1,180 @@
 (()=>{
-// ---- Acceso (usuario "juan"). Ver nota de seguridad en el README/respuesta ----
-const AUTH={u:'juan',h:'4722f87a2f2744a2a080f787723afe2716d9c89adafb5c4d4763b6af0082a310'};
-const $=(s,e=document)=>e.querySelector(s);
-const app=$('#app');
+const C=window.CFG,$=(s,e=document)=>e.querySelector(s),app=$('#app');
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const uid=()=>Math.random().toString(36).slice(2,10);
 const safe=u=>/^(https?:|mailto:)/i.test(u||'')?u:'#';
-const sha=async t=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t)))].map(b=>b.toString(16).padStart(2,'0')).join('');
-const toURL=f=>new Promise(r=>{const x=new FileReader();x.onload=()=>r(x.result);x.readAsDataURL(f)});
-const dl=(o,n)=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(o)],{type:'application/json'}));a.download=n;a.click()};
-const link=id=>location.origin+location.pathname+'#/s/'+id;
+const ICON={note:'✎',link:'↗',file:'▤'},VIS={private:'Privado',restricted:'Restringido',public:'Público'};
+const PRE=[
+ {n:'Marfil',bg:'#F6F5F2',surf:'#FFFFFF',ink:'#1B2530',mut:'#6B7580',line:'#DEDCD5',acc:'#A98355'},
+ {n:'Pizarra',bg:'#14181F',surf:'#1C222B',ink:'#ECE9E2',mut:'#9AA3AE',line:'#2C3440',acc:'#C9A66B'},
+ {n:'Salvia',bg:'#F3F5F1',surf:'#FFFFFF',ink:'#20302A',mut:'#66756D',line:'#D9DFD8',acc:'#5E7F6B'},
+ {n:'Marino',bg:'#F4F6F8',surf:'#FFFFFF',ink:'#14213D',mut:'#5C6B80',line:'#DCE1E8',acc:'#3D5A80'}];
+const FONTS=[['Georgia,serif','Georgia'],['"Palatino Linotype",Palatino,serif','Palatino'],['"Segoe UI",system-ui,sans-serif','Sans moderna'],['"Trebuchet MS",sans-serif','Trebuchet']];
+const DEF={theme:{...PRE[0],font:FONTS[0][0],rad:10},blocks:[
+ {t:'hero',tag:'Estudiante de Ingeniería en Tecnologías Industriales · ETSII UPM',title:'Juan Gutiérrez Cerdán',
+  text:'Me centro en el diseño funcional, la optimización de procesos y la gestión eficiente de proyectos. Entiendo la ingeniería como la capacidad de transformar problemas complejos en soluciones organizadas, estéticas y técnicamente precisas.\n\nEn paralelo a mis estudios desarrollo proyectos web a medida para profesionales y negocios de mi entorno, coordinando cada etapa desde la arquitectura inicial hasta la entrega final. Me mueve la curiosidad, el diseño intuitivo y la búsqueda constante de eficiencia, tanto en sistemas digitales como industriales.',
+  btn:'LinkedIn',url:'https://www.linkedin.com/in/juan-guti%C3%A9rrez-cerd%C3%A1n/'},
+ {t:'cards',title:'Contenido',sec:''}]};
+let U=null,OWN=false,EDIT=false,SITE=DEF,ITEMS=[],USERS=[];
+const db=window.supabase.createClient(C.url,C.key);
 
-// ---- Almacenamiento local (IndexedDB) ----
-const idb=()=>new Promise((res,rej)=>{const r=indexedDB.open('juan-site',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
-const kv=async(mode,fn)=>{const d=await idb();return new Promise((res,rej)=>{const t=d.transaction('kv',mode);const q=fn(t.objectStore('kv'));t.oncomplete=()=>res(q&&q.result);t.onerror=()=>rej(t.error)})};
-const load=()=>kv('readonly',s=>s.get('db'));
-const save=()=>kv('readwrite',s=>s.put(DB,'db'));
+const applyTheme=t=>{const r=document.documentElement.style;['bg','surf','ink','mut','line','acc'].forEach(k=>r.setProperty('--'+k,t[k]));r.setProperty('--font',t.font);r.setProperty('--rad',t.rad+'px');localStorage.setItem('th',JSON.stringify(t))};
+const setUser=u=>{U=u||null;OWN=!!u&&(u.email||'').toLowerCase()===C.owner.toLowerCase()};
+const loadItems=async()=>{ITEMS=(await db.from('items').select('*').order('pos')).data||[]};
+const loadSite=async()=>{const d=(await db.from('site').select('data').eq('id',1).maybeSingle()).data?.data||{};SITE={theme:{...DEF.theme,...d.theme},blocks:d.blocks||DEF.blocks};applyTheme(SITE.theme)};
+const link=id=>location.origin+location.pathname+'#/i/'+id;
 
-let PUB={profile:{},sections:[]},DB=null;
-const authed=()=>sessionStorage.getItem('auth')==='1';
-const GH=()=>JSON.parse(localStorage.getItem('gh')||'{}');
-const guess=()=>{const h=location.hostname,g=location.pathname.split('/')[1];return h.endsWith('.github.io')?{repo:h.split('.')[0]+'/'+(g&&!g.includes('.')?g:h)}:{}};
-const cfg=()=>({branch:'main',...guess(),...GH()});
-const ICON={note:'✎',link:'↗',file:'▤'};
-
-// ---- Rutas ----
-async function init(){
+async function boot(){
   $('#yr').textContent=new Date().getFullYear();
-  try{PUB=await(await fetch('content.json?t='+Date.now(),{cache:'no-store'})).json()}catch(e){}
-  if(authed())DB=await load()||structuredClone(PUB);
+  try{applyTheme({...DEF.theme,...JSON.parse(localStorage.th)})}catch(e){}
+  if(!C.url||C.url.includes('TU-PROYECTO'))return app.innerHTML='<p class="empty">Falta configurar <code>config.js</code>.</p>';
+  setUser((await db.auth.getSession()).data.session?.user);
+  await Promise.all([loadSite(),loadItems()]);
+  db.auth.onAuthStateChange((_,s)=>{setUser(s?.user);head()});
   addEventListener('hashchange',route);route();
 }
+const head=()=>{$('#nav').innerHTML=OWN?`<a class="btn ghost" href="#/admin">Panel</a><button class="btn ghost" data-a="edit">${EDIT?'Salir de edición':'Editar página'}</button><button class="btn" data-a="out">Salir</button>`
+  :U?`<a class="btn ghost" href="#/mis">Mi espacio</a><button class="btn" data-a="out">Salir</button>`:`<a class="btn" href="#/login">Acceder</a>`;document.body.classList.toggle('edit',EDIT)};
 function route(){
-  const [a,b]=location.hash.replace(/^#\/?/,'').split('/');
-  const acc=$('#acc');acc.textContent=authed()?'Área privada':'Acceder';acc.href=authed()?'#/admin':'#/login';
-  scrollTo(0,0);
-  if(a==='login')return login();
-  if(a==='admin')return admin();
-  if(a==='s')return view(b);
-  home();
+  const [a,b]=location.hash.replace(/^#\/?/,'').split('/');head();scrollTo(0,0);
+  ({login:()=>login(0),registro:()=>login(1),admin,mis,i:()=>view(b)}[a]||home)();
 }
 
-// ---- Página principal ----
-const card=i=>`<a class="card" href="#/s/${i.id}"><span class="ic">${ICON[i.type]}</span><h3>${esc(i.title)}</h3><p>${esc((i.text||i.file?.name||i.url||'').slice(0,110))}</p></a>`;
+// ---- Portada con editor visual ----
+const card=i=>`<a class="card" href="#/i/${i.id}"><span class="ic">${ICON[i.kind]}</span><h3>${esc(i.title)}</h3><p>${esc((i.body||i.file_name||i.url||'').slice(0,110))}</p></a>`;
+const ed=(i,f,v,tag,cls='')=>`<${tag} class="${cls}" data-b="${i}" data-f="${f}" ${EDIT?'contenteditable="true"':''}>${esc(v)}</${tag}>`;
+const R={
+  hero:(b,i)=>`<section class="hero">${ed(i,'tag',b.tag,'p','tag')}${ed(i,'title',b.title,'h1')}${ed(i,'text',b.text,'p','lead')}${b.btn||EDIT?`<a class="btn ghost" ${EDIT?'':`target="_blank" rel="noopener" href="${esc(safe(b.url))}"`}>${ed(i,'btn',b.btn,'span')}</a>`:''}</section>`,
+  text:(b,i)=>`<section class="block">${ed(i,'title',b.title,'h2')}${ed(i,'body',b.body,'p','lead')}</section>`,
+  cards:(b,i)=>`<section class="block">${ed(i,'title',b.title,'h2')}<div class="grid">${ITEMS.filter(x=>x.vis==='public'&&x.listed&&(!b.sec||x.sec===b.sec)).map(card).join('')||(EDIT?'<p class="empty">Aquí aparecerá el contenido público marcado como visible.</p>':'')}</div></section>`};
 function home(){
-  const p=PUB.profile||{};
-  const secs=(PUB.sections||[]).filter(s=>s.items.some(i=>i.public));
-  document.title=p.name||'Inicio';
-  app.innerHTML=`<section class="hero"><p class="tag">${esc(p.tagline)}</p><h1>${esc(p.name)}</h1>
-  ${(p.bio||[]).map(t=>`<p class="lead">${esc(t)}</p>`).join('')}
-  ${p.linkedin?`<a class="btn ghost" target="_blank" rel="noopener" href="${esc(safe(p.linkedin))}">LinkedIn</a>`:''}</section>`+
-  secs.map(s=>`<section class="block"><h2>${esc(s.title)}</h2><div class="grid">${s.items.filter(i=>i.public).map(card).join('')}</div></section>`).join('');
+  document.title=SITE.blocks[0]?.title||'Inicio';
+  app.innerHTML=SITE.blocks.map((b,i)=>{const h=(R[b.t]||(()=>''))(b,i);
+    return EDIT?`<div class="bw"><div class="tb"><button class="btn sm" data-a="mv" data-b="${i}" data-d="-1">↑</button><button class="btn sm" data-a="mv" data-b="${i}" data-d="1">↓</button>
+    ${b.t==='cards'?`<button class="btn sm" data-a="sec" data-b="${i}">Sección</button>`:''}${b.t==='hero'?`<button class="btn sm" data-a="lnk" data-b="${i}">Enlace</button>`:''}
+    ${b.t==='hero'?'':`<button class="btn sm danger" data-a="rm" data-b="${i}">✕</button>`}</div>${h}</div>`:h}).join('')
+  +(EDIT?`<div class="add row"><button class="btn ghost sm" data-a="add" data-t="text">+ Bloque de texto</button><button class="btn ghost sm" data-a="add" data-t="cards">+ Bloque de contenido</button></div>
+  <div class="eb"><button class="btn" data-a="save">Guardar</button><button class="btn ghost" data-a="style">Estilo</button><button class="btn ghost" data-a="edit">Salir</button></div>`:'');
+}
+function style(){
+  const t=SITE.theme,d=$('#dlg');
+  d.innerHTML=`<form method="dialog"><h2>Estilo</h2><div class="row">${PRE.map((p,k)=>`<button type="button" class="btn sm ghost" data-a="pre" data-k="${k}">${p.n}</button>`).join('')}</div>
+  <div class="cols">${[['bg','Fondo'],['surf','Tarjetas'],['ink','Texto'],['mut','Texto suave'],['line','Bordes'],['acc','Acento']].map(([k,n])=>`<label>${n}<input type="color" data-t="${k}" value="${t[k]}"></label>`).join('')}</div>
+  <label>Tipografía de títulos<select data-t="font">${FONTS.map(([v,n])=>`<option value="${esc(v)}" ${t.font===v?'selected':''}>${n}</option>`).join('')}</select></label>
+  <label>Redondeo<input type="range" min="0" max="24" data-t="rad" value="${t.rad}"></label>
+  <p class="empty">Recuerda pulsar «Guardar» en la barra para que lo vea todo el mundo.</p><button class="btn" value="x">Cerrar</button></form>`;
+  d.showModal();
 }
 
-// ---- Elemento compartido ----
-function view(id){
-  let it;
-  for(const s of [...(PUB.sections||[]),...(authed()&&DB?DB.sections:[])]){it=s.items.find(i=>i.id===id&&(i.public||authed()));if(it)break}
-  if(!it){app.innerHTML='<div class="view"><h1>No encontrado</h1><p>Este enlace no existe o ya no es público.</p><a class="btn" href="#/">Volver al inicio</a></div>';return}
-  const f=it.file,t=f?.type||'',src=f?(f.path?encodeURI(f.path):f.data):'';
-  app.innerHTML=`<article class="view"><h1>${esc(it.title)}</h1>
-  ${it.text?`<p class="body">${esc(it.text)}</p>`:''}
-  ${it.url?`<p><a class="btn" target="_blank" rel="noopener" href="${esc(safe(it.url))}">Abrir enlace</a></p>`:''}
-  ${f?(t.startsWith('image/')?`<img alt="${esc(f.name)}" src="${src}">`:t==='application/pdf'?`<iframe title="${esc(f.name)}" src="${src}"></iframe>`:t.startsWith('video/')?`<video controls src="${src}"></video>`:'')+`<p><a class="btn ghost" download="${esc(f.name)}" href="${src}">Descargar ${esc(f.name)}</a></p>`:''}
-  <p><a href="#/">← Inicio</a></p></article>`;
-}
-
-// ---- Login ----
-function login(){
-  if(authed())return location.hash='#/admin';
-  app.innerHTML=`<form class="login" id="lf"><h1>Acceder</h1>
-  <label>Usuario<input name="u" autocomplete="username" required></label>
-  <label>Contraseña<input name="p" type="password" autocomplete="current-password" required></label>
-  <p class="err" id="er"></p><button class="btn">Entrar</button></form>`;
+// ---- Acceso ----
+function login(reg){
+  if(U)return location.hash=OWN?'#/admin':'#/mis';
+  app.innerHTML=`<form class="login" id="lf"><h1>${reg?'Crear cuenta':'Acceder'}</h1>
+  <label>Email<input name="e" type="email" required autocomplete="username"></label>
+  <label>Contraseña<input name="p" type="password" minlength="6" required autocomplete="${reg?'new-password':'current-password'}"></label>
+  <p class="err" id="er"></p><div class="row"><button class="btn">${reg?'Registrarme':'Entrar'}</button><a href="#/${reg?'login':'registro'}">${reg?'Ya tengo cuenta':'Tengo una invitación'}</a></div></form>`;
   $('#lf').onsubmit=async e=>{
-    e.preventDefault();
-    const u=e.target.u.value.trim().toLowerCase(),p=e.target.p.value;
-    if(u===AUTH.u&&await sha(u+':'+p)===AUTH.h){
-      sessionStorage.setItem('auth','1');DB=await load()||structuredClone(PUB);location.hash='#/admin';
-    }else $('#er').textContent='Usuario o contraseña incorrectos.';
+    e.preventDefault();const a={email:e.target.e.value.trim(),password:e.target.p.value};
+    const {data,error}=await(reg?db.auth.signUp(a):db.auth.signInWithPassword(a));
+    if(error||!data.session)return $('#er').textContent=reg?'No se pudo registrar. Comprueba que tu email tiene invitación.':'Email o contraseña incorrectos.';
+    setUser(data.session.user);await loadItems();location.hash=OWN?'#/admin':'#/mis';
   };
 }
-
-// ---- Área privada ----
-function admin(){
-  if(!authed())return location.hash='#/login';
-  const p=DB.profile||{},g=cfg();
-  app.innerHTML=`<div class="bar"><h1>Área privada</h1><div class="row">
-    <button class="btn" data-a="ns">+ Sección</button>
-    <button class="btn" data-a="pub">Publicar</button>
-    <button class="btn ghost" data-a="out">Salir</button></div></div>
-  <p class="note" id="st">Los cambios se guardan en este navegador. Pulsa Publicar para llevar a la web todo lo marcado como público.</p>
-  <section class="panel"><h2>Perfil de la página principal</h2>
-    <label>Nombre<input data-p="name" value="${esc(p.name)}"></label>
-    <label>Subtítulo<input data-p="tagline" value="${esc(p.tagline)}"></label>
-    <label>LinkedIn (URL)<input data-p="linkedin" value="${esc(p.linkedin)}"></label>
-    <label>Descripción (separa párrafos con una línea en blanco)<textarea data-p="bio" rows="7">${esc((p.bio||[]).join('\n\n'))}</textarea></label></section>
-  ${DB.sections.length?DB.sections.map(s=>`<section class="panel"><div class="head"><input data-st="${s.id}" value="${esc(s.title)}" aria-label="Título de sección">
-    <button class="btn sm" data-a="add" data-s="${s.id}">+ Elemento</button><button class="btn sm danger" data-a="delsec" data-s="${s.id}">Borrar</button></div>
-    ${s.items.length?s.items.map(i=>`<div class="item"><span class="ic">${ICON[i.type]}</span><div class="t">${esc(i.title)}<small>${i.file?esc(i.file.name)+' · '+(i.file.size/1024).toFixed(0)+' KB':esc(i.url||'')}</small></div>
-      <label class="chk"><input type="checkbox" data-pub data-s="${s.id}" data-i="${i.id}" ${i.public?'checked':''}> Público</label>
-      ${i.public?`<button class="btn sm ghost" data-a="copy" data-i="${i.id}">Copiar enlace</button>`:''}
-      <button class="btn sm ghost" data-a="edit" data-s="${s.id}" data-i="${i.id}">Editar</button>
-      <button class="btn sm danger" data-a="del" data-s="${s.id}" data-i="${i.id}">Borrar</button></div>`).join(''):'<p class="empty">Sección vacía. Añade tu primer elemento.</p>'}</section>`).join(''):'<p class="empty">Aún no hay secciones. Crea la primera con «+ Sección».</p>'}
-  <section class="panel"><h2>Ajustes de publicación</h2>
-    <label>Repositorio (usuario/repo)<input data-g="repo" value="${esc(g.repo)}"></label>
-    <label>Rama<input data-g="branch" value="${esc(g.branch)}"></label>
-    <label>Token de GitHub<input data-g="token" type="password" autocomplete="off" value="${esc(g.token)}"></label>
-    <p class="empty">GitHub → Settings → Developer settings → Fine-grained tokens: limitado a este repositorio y con permiso «Contents: Read and write». Se guarda solo en este navegador.</p>
-    <div class="row"><button class="btn ghost" data-a="ex2">Copia de seguridad</button><label class="btn ghost" style="margin:0">Restaurar<input type="file" id="imp" accept=".json" hidden></label></div></section>`;
+function mis(){
+  if(!U)return location.hash='#/login';
+  app.innerHTML=`<h1>Mi espacio</h1><p class="empty">Contenido restringido al que tienes acceso.</p><div class="grid">${ITEMS.filter(i=>i.vis==='restricted').map(card).join('')||'<p class="empty">Aún no tienes contenido asignado.</p>'}</div>`;
 }
 
-const sec=id=>DB.sections.find(s=>s.id===id);
-const pubData=()=>({kind:'public',profile:DB.profile,sections:DB.sections.map(s=>({...s,items:s.items.filter(i=>i.public).map(i=>i.file?{...i,file:{name:i.file.name,type:i.file.type,size:i.file.size,path:i.file.path}}:i)})).filter(s=>s.items.length)});
-
-async function publish(){
-  const st=$('#st'),say=t=>st.textContent=t,g=cfg();
-  if(!g.repo||!g.token)return say('Completa el repositorio y el token en «Ajustes de publicación».');
-  const H={Authorization:'Bearer '+g.token,Accept:'application/vnd.github+json'},U=p=>`https://api.github.com/repos/${g.repo}/contents/${p}`;
-  const get=async p=>{const r=await fetch(U(p)+'?ref='+g.branch,{headers:H});if(r.status===404)return null;if(!r.ok)throw Error(r.status===401?'Token no válido o caducado.':'Error '+r.status+' al leer el repositorio.');return r.json()};
-  const put=async(p,b64,msg)=>{const cur=await get(p);const r=await fetch(U(p),{method:'PUT',headers:H,body:JSON.stringify({message:msg,content:b64,branch:g.branch,sha:cur?.sha})});if(!r.ok)throw Error(r.status===403||r.status===404?'Sin permiso de escritura: revisa el token y el repositorio.':'No se pudo subir '+p+' ('+r.status+').')};
-  try{
-    const items=DB.sections.flatMap(s=>s.items.filter(i=>i.public&&i.file));
-    const todo=items.filter(i=>i.file.data&&!i.file.path);let n=0;
-    for(const i of todo){say(`Subiendo archivos ${++n}/${todo.length}…`);const p='files/'+i.id+'-'+i.file.name.replace(/[^\w.-]+/g,'_');await put(p,i.file.data.split(',')[1],'Añadir archivo');i.file.path=p}
-    const used=new Set(items.map(i=>i.file.path)),dir=await get('files');
-    for(const f of Array.isArray(dir)?dir:[])if(!used.has(f.path))await fetch(U(f.path),{method:'DELETE',headers:H,body:JSON.stringify({message:'Quitar archivo',sha:f.sha,branch:g.branch})});
-    DB.sections.forEach(s=>s.items.forEach(i=>{if(i.file&&i.file.data&&i.file.path&&!used.has(i.file.path))delete i.file.path}));
-    say('Publicando contenido…');
-    const data=pubData();
-    await put('content.json',btoa(unescape(encodeURIComponent(JSON.stringify(data,null,1)))),'Actualizar contenido');
-    PUB=data;await save();say('Publicado. La web se actualiza en 1–2 minutos.');
-  }catch(e){say(e.message)}
+// ---- Contenido compartido ----
+async function view(id){
+  app.innerHTML='<p class="empty">Cargando…</p>';
+  const it=(await db.from('items').select('*').eq('id',id).maybeSingle()).data;
+  if(!it)return app.innerHTML=`<div class="view"><h1>No disponible</h1><p>Este contenido no existe o no tienes acceso.</p><div class="row">${U?'':'<a class="btn" href="#/login">Acceder</a>'}<a class="btn ghost" href="#/">Inicio</a></div></div>`;
+  let f='';
+  if(it.file_path){const u=(await db.storage.from('files').createSignedUrl(it.file_path,3600)).data?.signedUrl,t=it.file_type||'';
+    if(u)f=(t.startsWith('image/')?`<img alt="" src="${u}">`:t==='application/pdf'?`<iframe title="${esc(it.file_name)}" src="${u}"></iframe>`:t.startsWith('video/')?`<video controls src="${u}"></video>`:'')+`<p><a class="btn ghost" target="_blank" rel="noopener" href="${u}">Abrir / descargar ${esc(it.file_name)}</a></p>`}
+  document.title=it.title;
+  app.innerHTML=`<article class="view"><h1>${esc(it.title)}</h1>${it.body?`<p class="body">${esc(it.body)}</p>`:''}${it.url?`<p><a class="btn" target="_blank" rel="noopener" href="${esc(safe(it.url))}">Abrir enlace</a></p>`:''}${f}<p><a href="#/">← Inicio</a></p></article>`;
 }
 
-app.addEventListener('click',async e=>{
-  const b=e.target.closest('[data-a]');if(!b)return;
-  const {a,s,i}=b.dataset;
-  if(a==='ns'){const t=prompt('Nombre de la sección:');if(t){DB.sections.push({id:uid(),title:t,items:[]});await save();admin()}}
-  if(a==='add')openItem(s);
-  if(a==='edit')openItem(s,i);
-  if(a==='del'&&confirm('¿Borrar este elemento?')){sec(s).items=sec(s).items.filter(x=>x.id!==i);await save();admin()}
-  if(a==='delsec'&&confirm('¿Borrar la sección y todo su contenido?')){DB.sections=DB.sections.filter(x=>x.id!==s);await save();admin()}
-  if(a==='copy'){await navigator.clipboard.writeText(link(i));b.textContent='¡Copiado!'}
-  if(a==='pub')publish();
-  if(a==='ex2')dl({kind:'full',...DB},'copia-completa.json');
-  if(a==='out'){sessionStorage.removeItem('auth');DB=null;location.hash='#/'}
-});
-app.addEventListener('change',async e=>{
-  const t=e.target;
-  if(t.dataset.p){const v=t.value;DB.profile[t.dataset.p]=t.dataset.p==='bio'?v.split(/\n\s*\n/).map(x=>x.trim()).filter(Boolean):v;await save()}
-  if(t.dataset.g){const g=GH();g[t.dataset.g]=t.value.trim();localStorage.setItem('gh',JSON.stringify(g))}
-  if(t.dataset.st){sec(t.dataset.st).title=t.value;await save()}
-  if(t.hasAttribute('data-pub')){sec(t.dataset.s).items.find(x=>x.id===t.dataset.i).public=t.checked;await save();admin()}
-  if(t.id==='imp'&&t.files[0]){
-    try{const o=JSON.parse(await t.files[0].text());
-      if(!Array.isArray(o.sections))throw 0;
-      if(confirm('Esto reemplaza el contenido actual de tu área privada. ¿Continuar?')){DB={profile:o.profile||DB.profile,sections:o.sections};await save();admin()}
-    }catch(_){alert('Archivo no válido.')}
-  }
-});
-
-function openItem(sid,iid){
-  const S=sec(sid);
-  const it=iid?S.items.find(i=>i.id===iid):{id:uid(),type:'note',title:'',text:'',url:'',public:false};
+// ---- Panel del propietario ----
+const row=i=>`<div class="item"><span class="ic">${ICON[i.kind]}</span><div class="t">${esc(i.title)}<small>${VIS[i.vis]}${i.vis==='public'?(i.listed?' · en portada':' · oculto (solo con enlace)'):''}</small></div>
+  ${i.vis!=='private'?`<button class="btn sm ghost" data-a="copy" data-i="${i.id}">Copiar enlace</button>`:''}<button class="btn sm ghost" data-a="edit1" data-i="${i.id}">Editar</button><button class="btn sm danger" data-a="del" data-i="${i.id}">Borrar</button></div>`;
+async function admin(){
+  if(!OWN)return location.hash='#/login';
+  const [inv,pr]=await Promise.all([db.from('invites').select('email'),db.from('profiles').select('id,email')]);
+  const reg=new Set((pr.data||[]).map(p=>p.email.toLowerCase()));
+  USERS=(pr.data||[]).filter(p=>p.email.toLowerCase()!==C.owner.toLowerCase());
+  const secs=[...new Set(ITEMS.map(i=>i.sec))];
+  app.innerHTML=`<div class="bar"><h1>Panel</h1><button class="btn" data-a="new">+ Contenido</button></div>`
+  +(secs.length?secs.map(s=>`<section class="panel"><h2>${esc(s)}</h2>${ITEMS.filter(i=>i.sec===s).map(row).join('')}</section>`).join(''):'<p class="empty">Aún no hay contenido. Crea el primero con «+ Contenido».</p>')
+  +`<section class="panel"><h2>Usuarios</h2><form class="row" id="inv"><input type="email" id="ie" placeholder="email@ejemplo.com" required style="max-width:300px"><button class="btn sm">Invitar</button></form>
+  <p class="empty">La persona invitada crea su cuenta en «Acceder → Tengo una invitación». Después podrás darle acceso a contenido restringido.</p>
+  ${(inv.data||[]).map(v=>`<div class="item"><div class="t">${esc(v.email)}<small>${reg.has(v.email.toLowerCase())?'Registrado':'Pendiente de registro'}</small></div><button class="btn sm danger" data-a="uninv" data-e="${esc(v.email)}">Quitar invitación</button></div>`).join('')}</section>`;
+}
+async function openItem(id){
+  const it=ITEMS.find(i=>i.id===id)||{kind:'note',sec:'General',title:'',body:'',url:'',vis:'private',listed:false};
+  let gr=new Set();
+  if(id)gr=new Set(((await db.from('grants').select('user_id').eq('item_id',id)).data||[]).map(g=>g.user_id));
   const d=$('#dlg');
-  d.innerHTML=`<form method="dialog"><h2>${iid?'Editar':'Nuevo'} elemento</h2>
-  <label>Tipo<select name="type">${[['note','Nota / texto'],['link','Enlace'],['file','Archivo']].map(([v,n])=>`<option value="${v}" ${it.type===v?'selected':''}>${n}</option>`).join('')}</select></label>
+  d.innerHTML=`<form method="dialog"><h2>${id?'Editar':'Nuevo'} contenido</h2>
+  <label>Tipo<select name="kind">${[['note','Nota / texto'],['link','Enlace'],['file','Archivo']].map(([v,n])=>`<option value="${v}" ${it.kind===v?'selected':''}>${n}</option>`).join('')}</select></label>
   <label>Título<input name="title" required value="${esc(it.title)}"></label>
-  <label>Texto<textarea name="text" rows="5">${esc(it.text)}</textarea></label>
+  <label>Sección<input name="sec" list="sl" value="${esc(it.sec)}"><datalist id="sl">${[...new Set(ITEMS.map(i=>i.sec))].map(s=>`<option value="${esc(s)}">`).join('')}</datalist></label>
+  <label>Texto<textarea name="body" rows="4">${esc(it.body)}</textarea></label>
   <label>URL (para enlaces)<input name="url" value="${esc(it.url)}"></label>
-  <label>Archivo ${it.file?'(actual: '+esc(it.file.name)+')':''}<input type="file" name="file"></label>
-  <label class="chk"><input type="checkbox" name="public" ${it.public?'checked':''}> Público</label>
-  <div class="row" style="margin-top:14px"><button class="btn" value="ok">Guardar</button><button class="btn ghost" value="x" formnovalidate>Cancelar</button></div></form>`;
-  d.showModal();
+  <label>Archivo ${it.file_name?'(actual: '+esc(it.file_name)+')':''}<input type="file" name="file"></label>
+  <label>Acceso<select name="vis" id="vs">${Object.entries(VIS).map(([k,v])=>`<option value="${k}" ${it.vis===k?'selected':''}>${v}</option>`).join('')}</select></label>
+  <label class="chk" id="lsd"><input type="checkbox" name="listed" ${it.listed?'checked':''}> Visible en la portada (si no, solo con enlace)</label>
+  <fieldset id="gr"><legend>Usuarios con acceso</legend>${USERS.map(u=>`<label class="chk"><input type="checkbox" name="g" value="${u.id}" ${gr.has(u.id)?'checked':''}> ${esc(u.email)}</label>`).join('')||'<span class="empty">Aún no hay usuarios registrados.</span>'}</fieldset>
+  <div class="row"><button class="btn" value="ok">Guardar</button><button class="btn ghost" value="x" formnovalidate>Cancelar</button></div></form>`;
+  const vs=$('#vs'),sync=()=>{$('#lsd').hidden=vs.value!=='public';$('#gr').hidden=vs.value!=='restricted'};
+  vs.onchange=sync;sync();d.showModal();
   d.querySelector('form').onsubmit=async e=>{
     if(e.submitter.value!=='ok')return;
-    const f=new FormData(e.target),file=f.get('file');
-    Object.assign(it,{type:f.get('type'),title:f.get('title'),text:f.get('text'),url:f.get('url'),public:!!f.get('public')});
-    if(file&&file.size>20e6)return alert('Archivo demasiado grande (máx. 20 MB).');
-    if(file&&file.size)it.file={name:file.name,type:file.type,size:file.size,data:await toURL(file)};
-    if(!iid)S.items.push(it);
-    await save();admin();
+    const f=new FormData(e.target),file=f.get('file'),v=f.get('vis'),rid=id||crypto.randomUUID();
+    const r={kind:f.get('kind'),title:f.get('title'),sec:f.get('sec')||'General',body:f.get('body'),url:f.get('url'),vis:v,listed:v==='public'&&!!f.get('listed')};
+    if(file&&file.size>50e6)return alert('Máximo 50 MB por archivo (límite del plan gratuito).');
+    if(file&&file.size){const p=rid+'/'+file.name.replace(/[^\w.-]+/g,'_');
+      const u=await db.storage.from('files').upload(p,file,{upsert:true,contentType:file.type||undefined});
+      if(u.error)return alert(u.error.message);
+      if(it.file_path&&it.file_path!==p)await db.storage.from('files').remove([it.file_path]);
+      Object.assign(r,{file_path:p,file_name:file.name,file_type:file.type})}
+    const w=await db.from('items').upsert({id:rid,...r});
+    if(w.error)return alert(w.error.message);
+    await db.from('grants').delete().eq('item_id',rid);
+    if(v==='restricted'){const g=f.getAll('g').map(x=>({item_id:rid,user_id:x}));if(g.length)await db.from('grants').insert(g)}
+    await loadItems();admin();
   };
 }
-init();
+
+// ---- Eventos ----
+document.addEventListener('click',async e=>{
+  const b=e.target.closest('[data-a]');if(!b)return;
+  const {a,i,d}=b.dataset,k=+b.dataset.b,B=SITE.blocks;
+  if(a==='out'){await db.auth.signOut();setUser();EDIT=false;await loadItems();location.hash==='#/'?route():location.hash='#/'}
+  if(a==='edit'){EDIT=!EDIT;location.hash==='#/'||location.hash===''?route():location.hash='#/'}
+  if(a==='new')openItem();
+  if(a==='edit1')openItem(i);
+  if(a==='del'&&confirm('¿Borrar este contenido?')){const it=ITEMS.find(x=>x.id===i);if(it.file_path)await db.storage.from('files').remove([it.file_path]);await db.from('items').delete().eq('id',i);await loadItems();admin()}
+  if(a==='copy'){await navigator.clipboard.writeText(link(i));b.textContent='¡Copiado!'}
+  if(a==='uninv'){await db.from('invites').delete().eq('email',b.dataset.e);admin()}
+  if(a==='mv'&&B[k+ +d]){[B[k],B[k+ +d]]=[B[k+ +d],B[k]];home()}
+  if(a==='rm'&&confirm('¿Quitar este bloque?')){B.splice(k,1);home()}
+  if(a==='sec'){const s=prompt('Mostrar solo la sección (vacío = todas):',B[k].sec||'');if(s!==null){B[k].sec=s.trim();home()}}
+  if(a==='lnk'){const u=prompt('URL del botón:',B[k].url||'');if(u!==null){B[k].url=u.trim();home()}}
+  if(a==='add'){B.push(b.dataset.t==='text'?{t:'text',title:'Nuevo título',body:'Escribe aquí…'}:{t:'cards',title:'Contenido',sec:''});home()}
+  if(a==='style')style();
+  if(a==='pre'){Object.assign(SITE.theme,PRE[+b.dataset.k]);applyTheme(SITE.theme);style()}
+  if(a==='save'){const r=await db.from('site').upsert({id:1,data:SITE});b.textContent=r.error?'Error':'Guardado ✓';setTimeout(()=>b.textContent='Guardar',1800)}
+});
+document.addEventListener('input',e=>{
+  const t=e.target,c=t.closest('[data-b]');
+  if(c&&EDIT)SITE.blocks[c.dataset.b][c.dataset.f]=c.innerText.trim();
+  if(t.dataset.t){SITE.theme[t.dataset.t]=t.type==='range'?+t.value:t.value;applyTheme(SITE.theme)}
+});
+document.addEventListener('submit',async e=>{
+  if(e.target.id!=='inv')return;e.preventDefault();
+  await db.from('invites').upsert({email:$('#ie').value.trim().toLowerCase()});admin();
+});
+boot();
 })();

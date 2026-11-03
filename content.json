@@ -1,13 +1,1 @@
-{
-  "kind": "public",
-  "profile": {
-    "name": "Juan Gutiérrez Cerdán",
-    "tagline": "Estudiante de Ingeniería en Tecnologías Industriales · ETSII UPM",
-    "linkedin": "https://www.linkedin.com/in/juan-guti%C3%A9rrez-cerd%C3%A1n/",
-    "bio": [
-      "Me centro en el diseño funcional, la optimización de procesos y la gestión eficiente de proyectos. Entiendo la ingeniería como la capacidad de transformar problemas complejos en soluciones organizadas, estéticas y técnicamente precisas.",
-      "En paralelo a mis estudios desarrollo proyectos web a medida para profesionales y negocios de mi entorno, coordinando cada etapa desde la arquitectura inicial hasta la entrega final. Me mueve la curiosidad, el diseño intuitivo y la búsqueda constante de eficiencia, tanto en sistemas digitales como industriales."
-    ]
-  },
-  "sections": []
-}
+{"kind":"public","profile":{"name":"Juan Gutiérrez Cerdán","tagline":"Estudiante de Ingeniería en Tecnologías Industriales · ETSII UPM","linkedin":"https://www.linkedin.com/in/juan-guti%C3%A9rrez-cerd%C3%A1n/","bio":["Me centro en el diseño funcional, la optimización de procesos y la gestión eficiente de proyectos. Entiendo la ingeniería como la capacidad de transformar problemas complejos en soluciones organizadas, estéticas y técnicamente precisas.","En paralelo a mis estudios desarrollo proyectos web a medida para profesionales y negocios de mi entorno, coordinando cada etapa desde la arquitectura inicial hasta la entrega final. Me mueve la curiosidad, el diseño intuitivo y la búsqueda constante de eficiencia, tanto en sistemas digitales como industriales."]},"sections":[{"id":"3sfh3wax","title":"Prueba1","items":[{"id":"l6fpc9hb","type":"note","title":"Seccion1","text":"Hola!","url":"","public":true}]}]}
